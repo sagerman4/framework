@@ -27,6 +27,25 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
     /**
      * Assert if a notification was sent based on a truth-test callback.
      *
+     * @param  string  $notification
+     * @param  callable|null  $callback
+     * @return void
+     */
+    public function assertSent($notification, $callback = null)
+    {
+        if (is_numeric($callback)) {
+            return $this->assertSentTimes($notification, $callback);
+        }
+
+        PHPUnit::assertTrue(
+            $this->sent($notification, $callback)->count() > 0,
+            "The expected [{$notification}] notification was not sent."
+        );
+    }
+
+    /**
+     * Assert if a notification was sent to a notifiable entity based on a truth-test callback.
+     *
      * @param  mixed  $notifiable
      * @param  string  $notification
      * @param  callable|null  $callback
@@ -47,13 +66,28 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
         }
 
         PHPUnit::assertTrue(
-            $this->sent($notifiable, $notification, $callback)->count() > 0,
+            $this->sentTo($notifiable, $notification, $callback)->count() > 0,
             "The expected [{$notification}] notification was not sent."
         );
     }
 
     /**
      * Assert if a notification was sent a number of times.
+     *
+     * @param  string  $notification
+     * @param  int  $times
+     * @return void
+     */
+    public function assertSentTimes($notification, $times = 1)
+    {
+        PHPUnit::assertTrue(
+            ($count = $this->sent($notification)->count()) === $times,
+            "Expected [{$notification}] to be sent {$times} times, but was sent {$count} times."
+        );
+    }
+
+    /**
+     * Assert if a notification was sent to a notifiable entity a number of times.
      *
      * @param  mixed  $notifiable
      * @param  string  $notification
@@ -63,13 +97,28 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
     public function assertSentToTimes($notifiable, $notification, $times = 1)
     {
         PHPUnit::assertTrue(
-            ($count = $this->sent($notifiable, $notification)->count()) === $times,
+            ($count = $this->sentTo($notifiable, $notification)->count()) === $times,
             "Expected [{$notification}] to be sent {$times} times, but was sent {$count} times."
         );
     }
 
     /**
      * Determine if a notification was sent based on a truth-test callback.
+     *
+     * @param  string  $notification
+     * @param  callable|null  $callback
+     * @return void
+     */
+    public function assertNotSent($notification, $callback = null)
+    {
+        PHPUnit::assertTrue(
+            $this->sent($notification, $callback)->count() === 0,
+            "The unexpected [{$notification}] notification was sent."
+        );
+    }
+
+    /**
+     * Determine if a notification was sent to a notifiable entity based on a truth-test callback.
      *
      * @param  mixed  $notifiable
      * @param  string  $notification
@@ -87,7 +136,7 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
         }
 
         PHPUnit::assertTrue(
-            $this->sent($notifiable, $notification, $callback)->count() === 0,
+            $this->sentTo($notifiable, $notification, $callback)->count() === 0,
             "The unexpected [{$notification}] notification was sent."
         );
     }
@@ -126,14 +175,38 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
     /**
      * Get all of the notifications matching a truth-test callback.
      *
+     * @param  string  $notification
+     * @param  callable|null  $callback
+     * @return \Illuminate\Support\Collection
+     */
+    public function sent($notification, $callback = null)
+    {
+        if (! $this->hasSent($notification)) {
+            return collect();
+        }
+
+        $callback = $callback ?: function () {
+            return true;
+        };
+
+        $notifications = collect($this->notificationsOfType($notification));
+
+        return $notifications->filter(function ($arguments) use ($callback) {
+            return $callback(...array_values($arguments));
+        })->pluck('notification');
+    }
+
+    /**
+     * Get all of the notifications sent to a notifiable entity matching a truth-test callback.
+     *
      * @param  mixed  $notifiable
      * @param  string  $notification
      * @param  callable|null  $callback
      * @return \Illuminate\Support\Collection
      */
-    public function sent($notifiable, $notification, $callback = null)
+    public function sentTo($notifiable, $notification, $callback = null)
     {
-        if (! $this->hasSent($notifiable, $notification)) {
+        if (! $this->hasSentTo($notifiable, $notification)) {
             return collect();
         }
 
@@ -151,11 +224,22 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
     /**
      * Determine if there are more notifications left to inspect.
      *
+     * @param  string  $notification
+     * @return bool
+     */
+    public function hasSent($notification)
+    {
+        return ! empty($this->notificationsOfType($notification));
+    }
+
+    /**
+     * Determine if there are more notifications for a notifiable entity left to inspect.
+     *
      * @param  mixed  $notifiable
      * @param  string  $notification
      * @return bool
      */
-    public function hasSent($notifiable, $notification)
+    public function hasSentTo($notifiable, $notification)
     {
         return ! empty($this->notificationsFor($notifiable, $notification));
     }
@@ -171,6 +255,23 @@ class NotificationFake implements NotificationFactory, NotificationDispatcher
     {
         if (isset($this->notifications[get_class($notifiable)][$notifiable->getKey()][$notification])) {
             return $this->notifications[get_class($notifiable)][$notifiable->getKey()][$notification];
+        }
+
+        return [];
+    }
+
+    /**
+     * Get all of the notifications by type.
+     *
+     * @param  string  $notification
+     * @return array
+     */
+    protected function notificationsOfType($notification)
+    {
+        return Arr::collapse(Arr::collapse($this->notifications));
+
+        if (isset($notifications[$notification])) {
+            return $notifications[$notification];
         }
 
         return [];
